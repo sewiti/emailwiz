@@ -44,14 +44,31 @@ domain="$(cat /etc/mailname)"
 subdom=${MAIL_SUBDOM:-mail}
 maildomain="$subdom.$domain"
 certdir="/etc/letsencrypt/live/$maildomain"
+legocertdir="${LEGO_CERT_DIR:-$HOME/.lego/certificates}"
 
-[ ! -d "$certdir" ] &&
-	possiblecert="$(certbot certificates 2>/dev/null | grep "$maildomain\|*\.$domain" -A 2 | awk '/Certificate Path/ {print $3}' | head -n1)" &&
-	certdir="${possiblecert%/*}"
+if [ -d "$legocertdir" ]; then
+    ssl_key="$legocertdir/$maildomain.key"
+    ssl_cert="$legocertdir/$maildomain.crt"
+    ssl_issuer_cert="$legocertdir/$maildomain.issuer.crt"
 
-[ ! -d "$certdir" ] && echo "Note! You must first have a Let's Encrypt Certbot HTTPS/SSL Certificate for $maildomain.
+    if [ ! -e "$ssl_cert" ] || [ ! -e "$ssl_key" ] || [ ! -e "$ssl_issuer_cert" ]; then
+        echo "Note! You must first have a LEGO HTTPS/SSL Certificate for $maildomain.
+
+Use LEGO to get that and then rerun this script." && exit 1
+    fi
+else 
+    [ ! -d "$certdir" ] &&
+    	possiblecert="$(certbot certificates 2>/dev/null | grep "$maildomain\|*\.$domain" -A 2 | awk '/Certificate Path/ {print $3}' | head -n1)" &&
+    	certdir="${possiblecert%/*}"
+
+    [ ! -d "$certdir" ] && echo "Note! You must first have a Let's Encrypt Certbot HTTPS/SSL Certificate for $maildomain.
 
 Use Let's Encrypt's Certbot to get that and then rerun this script." && exit 1
+
+    ssl_key="$certdir/privkey.pem"
+    ssl_cert="$certdir/fullchain.pem"
+    ssl_issuer_cert="$certdir/cert.pem"
+fi
 
 # NOTE ON POSTCONF COMMANDS
 
@@ -63,9 +80,9 @@ Use Let's Encrypt's Certbot to get that and then rerun this script." && exit 1
 echo "Configuring Postfix's main.cf..."
 
 # Change the cert/key files to the default locations of the Let's Encrypt cert/key
-postconf -e "smtpd_tls_key_file=$certdir/privkey.pem"
-postconf -e "smtpd_tls_cert_file=$certdir/fullchain.pem"
-postconf -e "smtp_tls_CAfile=$certdir/cert.pem"
+postconf -e "smtpd_tls_key_file=$ssl_key"
+postconf -e "smtpd_tls_cert_file=$ssl_cert"
+postconf -e "smtp_tls_CAfile=$ssl_issuer_cert"
 
 # Enable, but do not require TLS. Requiring it with other server would cause
 # mail delivery problems and requiring it locally would cause many other
@@ -150,8 +167,8 @@ echo "# Dovecot config
 
 # If you're not a brainlet, SSL must be set to required.
 ssl = required
-ssl_cert = <$certdir/fullchain.pem
-ssl_key = <$certdir/privkey.pem
+ssl_cert = <$ssl_cert
+ssl_key = <$ssl_key
 ssl_min_protocol = TLSv1.2
 ssl_cipher_list = "'EECDH+ECDSA+AESGCM:EECDH+aRSA+AESGCM:EECDH+ECDSA+SHA256:EECDH+aRSA+SHA256:EECDH+ECDSA+SHA384:EECDH+ECDSA+SHA256:EECDH+aRSA+SHA384:EDH+aRSA+AESGCM:EDH+aRSA+SHA256:EDH+aRSA:EECDH:!aNULL:!eNULL:!MEDIUM:!LOW:!3DES:!MD5:!EXP:!PSK:!SRP:!DSS:!RC4:!SEED'"
 ssl_prefer_server_ciphers = yes
