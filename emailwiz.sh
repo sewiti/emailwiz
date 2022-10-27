@@ -208,9 +208,11 @@ namespace inbox {
 }
 	mailbox Trash {
 	special_use = \\Trash
+    auto = create
 }
 	mailbox Archive {
 	special_use = \\Archive
+    auto = create
 }
 }
 
